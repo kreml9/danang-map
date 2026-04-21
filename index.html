@@ -36,6 +36,14 @@
   .popup-dur { color: #7c3aed; font-size: 12px; margin-top: 2px; }
   .popup-naver { display: inline-block; margin-top: 8px; padding: 5px 12px; background: #4285F4; color: white; text-decoration: none; border-radius: 6px; font-size: 12px; font-weight: 600; }
   .popup-naver:hover { background: #3367d6; }
+
+  .popup-map { display: block; width: 100%; height: 200px; border: 0; }
+  .popup-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; }
+  .popup-btn { display: inline-block; padding: 7px 12px; border-radius: 7px; font-size: 12px; font-weight: 600; text-decoration: none; transition: background 0.15s; }
+  .popup-btn-primary { background: #4285F4; color: white; flex: 1 1 100%; text-align: center; padding: 9px 12px; font-size: 13px; }
+  .popup-btn-primary:hover { background: #3367d6; }
+  .popup-btn-secondary { background: #f0f4f8; color: #1f2937; flex: 1 1 auto; text-align: center; }
+  .popup-btn-secondary:hover { background: #e2e8f0; }
   .popup-io { display: inline-block; margin-top: 4px; font-size: 11px; background: #f0f0f0; padding: 2px 8px; border-radius: 4px; }
   .io-filter { margin-top: 8px; padding-top: 8px; border-top: 1px solid #eee; }
   .io-btn { cursor: pointer; padding: 3px 8px; border-radius: 4px; font-size: 12px; border: 1px solid #ddd; background: white; margin: 2px; }
@@ -219,28 +227,15 @@ function add(cat, lat, lng, name, kr, type, info, hours, warn, addr, search, io,
   const ic = mkIcon(C[cat], CAT[cat].e);
   const marker = L.marker([lat, lng], {icon: ic}).addTo(layers[cat]);
   marker.options.io = io || 'both';
-  const sq = search || name;
 
-  marker.on('mouseover', () => { fetchPhotos(lat, lng, name, sq, kr); });
-
-  marker.on('click', async function() {
-    marker.unbindPopup();
-    marker.bindPopup(`<div class="photo-loading">📷 Загрузка...</div>`, {maxWidth: 340, minWidth: 340}).openPopup();
-
-    const photos = await fetchPhotos(lat, lng, name, sq, kr);
+  marker.on('click', function() {
+    const gQuery = encodeURIComponent((kr ? kr + ' ' : '') + name + ' Da Nang');
+    const gPlaceUrl = `https://www.google.com/maps/search/?api=1&query=${gQuery}`;
+    const gPhotosUrl = `https://www.google.com/search?q=${gQuery}&tbm=isch`;
+    const embedUrl = `https://maps.google.com/maps?q=${encodeURIComponent((kr || name) + ' Da Nang')}&z=18&output=embed`;
 
     let html = '';
-    if (photos.length > 0) {
-      html += `<div style="position:relative"><div class="photo-gallery">`;
-      photos.forEach(p => {
-        html += `<img src="${p.thumb}" decoding="async" onclick="event.stopPropagation();openFull('${p.full}')" alt="photo">`;
-      });
-      html += `</div><div class="photo-count">${photos.length} фото — свайп →</div></div>`;
-    } else if (insta) {
-      html += `<div class="photo-empty">📷 Фото в открытых источниках нет<a href="https://instagram.com/${insta}" target="_blank">📸 @${insta} в Instagram</a></div>`;
-    } else {
-      html += `<div class="photo-empty">📷 Фото в открытых источниках нет</div>`;
-    }
+    html += `<iframe class="popup-map" loading="lazy" src="${embedUrl}" width="100%" height="200" style="border:0;display:block" referrerpolicy="no-referrer-when-downgrade"></iframe>`;
     html += `<div class="popup-body">`;
     html += `<div class="popup-name">${CAT[cat].e} ${name} <span class="popup-kr">${kr||''}</span></div>`;
     html += `<div class="popup-type">${type}</div>`;
@@ -248,13 +243,17 @@ function add(cat, lat, lng, name, kr, type, info, hours, warn, addr, search, io,
     if (hours) html += `<div class="popup-hours">🕐 ${hours}</div>`;
     if (dur) html += `<div class="popup-dur">⏱️ ${dur}</div>`;
     if (warn) html += `<div class="popup-warn">⚠️ ${warn}</div>`;
-    if (addr) html += `<div class="popup-addr" style="cursor:pointer" onclick="navigator.clipboard.writeText('${addr}');this.innerHTML='✅ Скопировано!';setTimeout(()=>this.innerHTML='📍 ${addr}',1500)">📍 ${addr}</div>`;
+    if (addr) html += `<div class="popup-addr" style="cursor:pointer" onclick="navigator.clipboard.writeText('${addr.replace(/'/g, "\\'")}');this.innerHTML='✅ Скопировано!';setTimeout(()=>this.innerHTML='📍 ${addr.replace(/'/g, "\\'")}',1500)">📍 ${addr}</div>`;
     if (io) { const badge = io==='in'?'🏠 Indoor':io==='out'?'☀️ Outdoor':'🏠☀️ Indoor+Outdoor'; html += `<div class="popup-io">${badge}</div>`; }
-    html += `<a class="popup-naver" href="https://www.google.com/maps/search/${encodeURIComponent(kr || name)}" target="_blank">🗺️ Открыть в Google Maps</a>`;
+    html += `<div class="popup-actions">`;
+    html += `<a class="popup-btn popup-btn-primary" href="${gPlaceUrl}" target="_blank" rel="noopener">📷 Фото и отзывы в Google Maps</a>`;
+    if (insta) html += `<a class="popup-btn popup-btn-secondary" href="https://instagram.com/${insta}" target="_blank" rel="noopener">📸 @${insta}</a>`;
+    html += `<a class="popup-btn popup-btn-secondary" href="${gPhotosUrl}" target="_blank" rel="noopener">🔍 Все фото Google</a>`;
+    html += `</div>`;
     html += `</div>`;
 
-    marker.getPopup().setContent(html);
-    marker.getPopup().update();
+    marker.unbindPopup();
+    marker.bindPopup(html, {maxWidth: 360, minWidth: 360}).openPopup();
   });
 }
 
