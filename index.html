@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Da Nang Map + Photos</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+  #map { height: 100vh; width: 100%; }
+
+  .leaflet-popup-content-wrapper { border-radius: 12px !important; padding: 0 !important; overflow: hidden; }
+  .leaflet-popup-content { margin: 0 !important; width: min(340px, calc(100vw - 60px)) !important; }
+
+  .photo-gallery { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; background: #111; height: 220px; }
+  .photo-gallery::-webkit-scrollbar { height: 6px; }
+  .photo-gallery::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.5); border-radius: 3px; }
+  .photo-gallery img { scroll-snap-align: start; height: 220px; min-width: 240px; max-width: 400px; object-fit: cover; flex-shrink: 0; cursor: pointer; transition: opacity 0.15s; background: #222; }
+  .photo-gallery img:hover { opacity: 0.85; }
+  .photo-loading { height: 220px; display: flex; align-items: center; justify-content: center; background: #1a1a2e; color: #888; font-size: 14px; width: 100%; }
+  .photo-empty { height: 80px; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: #99a; font-size: 13px; width: 100%; flex-direction: column; gap: 6px; }
+  .photo-empty a { color: #60a5fa; text-decoration: none; font-size: 13px; }
+  .photo-empty a:hover { text-decoration: underline; }
+  .photo-count { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.6); color: white; font-size: 11px; padding: 2px 8px; border-radius: 10px; pointer-events: none; z-index: 10; }
+
+  .popup-body { padding: 12px 14px 14px; }
+  .popup-name { font-weight: 700; font-size: 15px; line-height: 1.3; }
+  .popup-kr { font-weight: 400; font-size: 13px; color: #666; }
+  .popup-type { color: #888; font-size: 12px; margin-top: 2px; }
+  .popup-info { font-size: 13px; margin-top: 6px; line-height: 1.4; }
+  .popup-hours { color: #059669; font-size: 12px; margin-top: 4px; }
+  .popup-warn { color: #dc2626; font-size: 12px; margin-top: 2px; }
+  .popup-addr { color: #999; font-size: 11px; margin-top: 4px; }
+  .popup-dur { color: #7c3aed; font-size: 12px; margin-top: 2px; }
+  .popup-naver { display: inline-block; margin-top: 8px; padding: 5px 12px; background: #4285F4; color: white; text-decoration: none; border-radius: 6px; font-size: 12px; font-weight: 600; }
+  .popup-naver:hover { background: #3367d6; }
+  .popup-io { display: inline-block; margin-top: 4px; font-size: 11px; background: #f0f0f0; padding: 2px 8px; border-radius: 4px; }
+  .io-filter { margin-top: 8px; padding-top: 8px; border-top: 1px solid #eee; }
+  .io-btn { cursor: pointer; padding: 3px 8px; border-radius: 4px; font-size: 12px; border: 1px solid #ddd; background: white; margin: 2px; }
+  .io-btn.active { background: #3b82f6; color: white; border-color: #3b82f6; }
+
+  .legend { background: white; padding: 10px 14px; border-radius: 10px; box-shadow: 0 2px 12px rgba(0,0,0,0.15); font-size: 13px; max-height: 65vh; overflow-y: auto; }
+  .legend-title { font-weight: 700; font-size: 15px; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between; }
+  .legend-toggle { display: none; background: none; border: none; font-size: 18px; cursor: pointer; padding: 0 4px; }
+  .legend-body { }
+  .legend-body.collapsed { display: none; }
+  .filter-btn { cursor: pointer; padding: 3px 0; display: flex; align-items: center; gap: 6px; transition: opacity 0.15s; }
+  .filter-btn:hover { opacity: 0.7; }
+  .filter-btn.off { opacity: 0.35; text-decoration: line-through; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+  @media (max-width: 600px) {
+    .legend { max-height: 50vh; padding: 8px 10px; font-size: 12px; max-width: 180px; }
+    .legend-toggle { display: inline-block; }
+    .filter-btn { padding: 6px 0; min-height: 32px; }
+    .io-btn { padding: 6px 10px; font-size: 13px; min-height: 36px; }
+    .dot { width: 12px; height: 12px; }
+    .popup-body { padding: 10px 12px 12px; }
+    .popup-name { font-size: 14px; }
+    .popup-info { font-size: 12px; }
+    .fs-nav { width: 44px; height: 60px; font-size: 28px; }
+    .fs-prev { left: 6px; }
+    .fs-next { right: 6px; }
+    .fs-close { top: 10px; right: 12px; font-size: 28px; }
+    .photo-gallery { height: 180px; }
+    .photo-gallery img { height: 180px; min-width: 200px; }
+  }
+
+  .fullscreen-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.92); z-index: 10000; align-items: center; justify-content: center; flex-direction: column; }
+  .fullscreen-overlay.active { display: flex; }
+  .fullscreen-overlay img { max-width: 92vw; max-height: 85vh; object-fit: contain; border-radius: 4px; user-select: none; }
+  .fs-counter { color: rgba(255,255,255,0.7); font-size: 14px; margin-top: 12px; }
+  .fs-nav { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(255,255,255,0.15); border: none; color: white; font-size: 36px; width: 50px; height: 70px; cursor: pointer; border-radius: 8px; transition: background 0.15s; z-index: 10001; }
+  .fs-nav:hover { background: rgba(255,255,255,0.3); }
+  .fs-prev { left: 16px; }
+  .fs-next { right: 16px; }
+  .fs-close { position: absolute; top: 16px; right: 20px; background: none; border: none; color: rgba(255,255,255,0.7); font-size: 32px; cursor: pointer; z-index: 10001; }
+  .fs-close:hover { color: white; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div class="fullscreen-overlay" id="fs" onclick="if(event.target===this)closeFs()">
+  <button class="fs-close" onclick="closeFs()">✕</button>
+  <button class="fs-nav fs-prev" onclick="event.stopPropagation();fsNav(-1)">‹</button>
+  <img id="fs-img">
+  <button class="fs-nav fs-next" onclick="event.stopPropagation();fsNav(1)">›</button>
+  <div class="fs-counter" id="fs-counter"></div>
+</div>
+
+<script>
+const map = L.map('map').setView([16.06, 108.15], 11);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 19 }).addTo(map);
+
+const C = {
+  temple:'#8b5cf6', park:'#22c55e', view:'#f59e0b', photo:'#ec4899',
+  market:'#f97316', district:'#6366f1', museum:'#0ea5e9', event:'#ef4444',
+  hidden:'#14b8a6', trek:'#84cc16', shop:'#d946ef',
+  beach:'#0891b2', bridge:'#e11d48', cafe:'#a16207',
+  gf_ded: '#16a34a',
+  gf_opt: '#3b82f6',
+};
+const CAT = {
+  temple:{n:'🛕 Храмы/пагоды',e:'🛕'}, park:{n:'🌳 Парки',e:'🌳'}, view:{n:'🌅 Смотровые',e:'🌅'},
+  photo:{n:'📸 Фото-споты',e:'📸'}, market:{n:'🛒 Рынки',e:'🛒'}, district:{n:'🏘️ Районы',e:'🏘️'},
+  museum:{n:'🖼️ Музеи',e:'🖼️'}, event:{n:'🎪 События',e:'🎪'}, hidden:{n:'💎 Hidden gems',e:'💎'},
+  trek:{n:'🥾 Треккинг',e:'🥾'}, shop:{n:'🛍️ Шоппинг',e:'🛍️'},
+  beach:{n:'🏖️ Пляжи',e:'🏖️'}, bridge:{n:'🌉 Мосты',e:'🌉'}, cafe:{n:'☕ Кафе/rooftop',e:'☕'},
+  gf_ded: {n: '🥬 GF 100% dedicated', e: '🥬'},
+  gf_opt: {n: '🍽️ GF опции в меню', e: '🍽️'}
+};
+
+const layers = {};
+Object.keys(CAT).forEach(k => { layers[k] = L.layerGroup().addTo(map); });
+
+function mkIcon(color, emoji) {
+  const size = 30;
+  const fs = 15;
+  const border = '2.5px solid white';
+  const shadow = '0 2px 6px rgba(0,0,0,0.3)';
+  return L.divIcon({
+    className: '',
+    html: `<div style="width:${size}px;height:${size}px;background:${color};border:${border};border-radius:50%;box-shadow:${shadow};display:flex;align-items:center;justify-content:center;font-size:${fs}px;line-height:1;">${emoji}</div>`,
+    iconSize: [size,size], iconAnchor: [size/2,size/2], popupAnchor: [0,-size/2-2]
+  });
+}
+
+const photoCache = {};
+
+async function fetchPhotos(lat, lng, name, searchQuery, krName) {
+  const key = searchQuery || name;
+  if (photoCache[key]) return photoCache[key];
+
+  const urls = [];
+  const seen = new Set();
+
+  const junk = /\b(map|logo|icon|diagram|plan|stamp|flag|seal|coat.of.arms|signing|certificate|svg|ticket|layout|floor.plan|route|schema|emblem|badge)\b/i;
+
+  function parse(data) {
+    if (!data.query || !data.query.pages) return;
+    Object.values(data.query.pages).forEach(p => {
+      if (p.imageinfo) {
+        const ii = p.imageinfo[0];
+        const title = p.title || '';
+        const isJunk = junk.test(title) || ii.mime === 'image/svg+xml' || (ii.thumburl && ii.thumburl.includes('.svg'));
+        if (ii.mime && ii.mime.startsWith('image/') && ii.thumburl && !seen.has(ii.thumburl) && !isJunk) {
+          seen.add(ii.thumburl);
+          urls.push({ thumb: ii.thumburl, full: ii.url });
+        }
+      }
+    });
+  }
+
+  async function search(query, limit) {
+    try {
+      const q = encodeURIComponent(query);
+      const r = await fetch(`https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${q}&gsrlimit=${limit}&gsrnamespace=6&prop=imageinfo&iiprop=url|mime&iiurlwidth=200&format=json&origin=*`);
+      return await r.json();
+    } catch(e) { return {}; }
+  }
+
+  const promises = [search(searchQuery || name, 12)];
+  if (krName) promises.push(search(krName, 8));
+  promises.push(fetch(`https://commons.wikimedia.org/w/api.php?action=query&generator=geosearch&ggscoord=${lat}|${lng}&ggsradius=500&ggslimit=6&prop=imageinfo&iiprop=url|mime&iiurlwidth=200&format=json&origin=*`).then(r=>r.json()).catch(()=>({})));
+
+  const results = await Promise.all(promises);
+  results.forEach(d => parse(d));
+
+  photoCache[key] = urls.slice(0, 12);
+  return photoCache[key];
+}
+
+let fsPhotos = [];
+let fsIndex = 0;
+
+function openFull(url) {
+  const gallery = document.querySelector('.photo-gallery');
+  if (gallery) {
+    fsPhotos = Array.from(gallery.querySelectorAll('img')).map(img => {
+      const onclick = img.getAttribute('onclick') || '';
+      const match = onclick.match(/openFull\('([^']+)'\)/);
+      return match ? match[1] : img.src;
+    });
+    fsIndex = fsPhotos.indexOf(url);
+    if (fsIndex === -1) fsIndex = 0;
+  } else {
+    fsPhotos = [url];
+    fsIndex = 0;
+  }
+  showFsPhoto();
+  document.getElementById('fs').classList.add('active');
+}
+
+function showFsPhoto() {
+  document.getElementById('fs-img').src = fsPhotos[fsIndex];
+  document.getElementById('fs-counter').textContent = `${fsIndex + 1} / ${fsPhotos.length}  ←→`;
+}
+
+function fsNav(dir) {
+  fsIndex = (fsIndex + dir + fsPhotos.length) % fsPhotos.length;
+  showFsPhoto();
+}
+
+function closeFs() {
+  document.getElementById('fs').classList.remove('active');
+}
+
+document.addEventListener('keydown', (e) => {
+  const fs = document.getElementById('fs');
+  if (!fs.classList.contains('active')) return;
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); fsNav(1); }
+  else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); fsNav(-1); }
+  else if (e.key === 'Escape') { closeFs(); }
+});
+
+function add(cat, lat, lng, name, kr, type, info, hours, warn, addr, search, io, dur, insta) {
+  const ic = mkIcon(C[cat], CAT[cat].e);
+  const marker = L.marker([lat, lng], {icon: ic}).addTo(layers[cat]);
+  marker.options.io = io || 'both';
+  const sq = search || name;
+
+  marker.on('mouseover', () => { fetchPhotos(lat, lng, name, sq, kr); });
+
+  marker.on('click', async function() {
+    marker.unbindPopup();
+    marker.bindPopup(`<div class="photo-loading">📷 Загрузка...</div>`, {maxWidth: 340, minWidth: 340}).openPopup();
+
+    const photos = await fetchPhotos(lat, lng, name, sq, kr);
+
+    let html = '';
+    if (photos.length > 0) {
+      html += `<div style="position:relative"><div class="photo-gallery">`;
+      photos.forEach(p => {
+        html += `<img src="${p.thumb}" decoding="async" onclick="event.stopPropagation();openFull('${p.full}')" alt="photo">`;
+      });
+      html += `</div><div class="photo-count">${photos.length} фото — свайп →</div></div>`;
+    } else if (insta) {
+      html += `<div class="photo-empty">📷 Фото в открытых источниках нет<a href="https://instagram.com/${insta}" target="_blank">📸 @${insta} в Instagram</a></div>`;
+    } else {
+      html += `<div class="photo-empty">📷 Фото в открытых источниках нет</div>`;
+    }
+    html += `<div class="popup-body">`;
+    html += `<div class="popup-name">${CAT[cat].e} ${name} <span class="popup-kr">${kr||''}</span></div>`;
+    html += `<div class="popup-type">${type}</div>`;
+    if (info) html += `<div class="popup-info">${info}</div>`;
+    if (hours) html += `<div class="popup-hours">🕐 ${hours}</div>`;
+    if (dur) html += `<div class="popup-dur">⏱️ ${dur}</div>`;
+    if (warn) html += `<div class="popup-warn">⚠️ ${warn}</div>`;
+    if (addr) html += `<div class="popup-addr" style="cursor:pointer" onclick="navigator.clipboard.writeText('${addr}');this.innerHTML='✅ Скопировано!';setTimeout(()=>this.innerHTML='📍 ${addr}',1500)">📍 ${addr}</div>`;
+    if (io) { const badge = io==='in'?'🏠 Indoor':io==='out'?'☀️ Outdoor':'🏠☀️ Indoor+Outdoor'; html += `<div class="popup-io">${badge}</div>`; }
+    html += `<a class="popup-naver" href="https://www.google.com/maps/search/${encodeURIComponent(kr || name)}" target="_blank">🗺️ Открыть в Google Maps</a>`;
+    html += `</div>`;
+
+    marker.getPopup().setContent(html);
+    marker.getPopup().update();
+  });
+}
+
+const legend = L.control({position: 'topright'});
+legend.onAdd = () => {
+  const div = L.DomUtil.create('div', 'legend');
+  const isMobile = window.innerWidth <= 600;
+  const collapsed = isMobile ? ' collapsed' : '';
+  const arrow = isMobile ? '▶' : '▼';
+  let html = `<div class="legend-title">🇻🇳 Da Nang <button class="legend-toggle" onclick="toggleLegend()">${arrow}</button></div><div class="legend-body${collapsed}" id="legend-body"><div style="font-size:11px;color:#888;margin-bottom:8px">Клик → фото + детали<br>Свайп → ещё фото<br>Клик фото → на весь экран</div>`;
+  Object.entries(CAT).forEach(([k, v]) => {
+    html += `<div class="filter-btn" id="fb-${k}" onclick="toggle('${k}')"><span class="dot" style="background:${C[k]}"></span>${v.n}</div>`;
+  });
+  html += `<div style="margin-top:8px;font-size:11px;color:#aaa">${Object.values(layers).reduce((s,l)=>s+l.getLayers().length,0)} мест</div>`;
+  html += `<div class="io-filter">
+  <div style="font-size:12px;font-weight:600;margin-bottom:4px">Тип:</div>
+  <button class="io-btn active" id="io-all" onclick="filterIO('all')">Все</button>
+  <button class="io-btn" id="io-out" onclick="filterIO('out')">☀️ Outdoor</button>
+  <button class="io-btn" id="io-in" onclick="filterIO('in')">🏠 Indoor</button>
+</div></div>`;
+  div.innerHTML = html;
+  return div;
+};
+legend.addTo(map);
+
+window.toggle = function(k) {
+  const btn = document.getElementById(`fb-${k}`);
+  if (map.hasLayer(layers[k])) { map.removeLayer(layers[k]); btn.classList.add('off'); }
+  else { map.addLayer(layers[k]); btn.classList.remove('off'); }
+};
+
+window.toggleLegend = function() {
+  const body = document.getElementById('legend-body');
+  const btn = document.querySelector('.legend-toggle');
+  body.classList.toggle('collapsed');
+  btn.textContent = body.classList.contains('collapsed') ? '▶' : '▼';
+};
+
+(function() {
+  const fsEl = document.getElementById('fs');
+  let touchStartX = 0;
+  let touchStartY = 0;
+  fsEl.addEventListener('touchstart', function(e) {
+    touchStartX = e.changedTouches[0].screenX;
+    touchStartY = e.changedTouches[0].screenY;
+  }, {passive: true});
+  fsEl.addEventListener('touchend', function(e) {
+    const dx = e.changedTouches[0].screenX - touchStartX;
+    const dy = e.changedTouches[0].screenY - touchStartY;
+    if (Math.abs(dx) < 40 || Math.abs(dy) > Math.abs(dx)) return;
+    if (dx < 0) fsNav(1);
+    else fsNav(-1);
+  }, {passive: true});
+})();
+
+window.filterIO = function(mode) {
+  document.querySelectorAll('.io-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('io-' + mode).classList.add('active');
+  Object.values(layers).forEach(lg => {
+    lg.eachLayer(m => {
+      const mio = m.options.io || 'both';
+      if (mode === 'all' || mio === mode || mio === 'both') {
+        m.setOpacity(1);
+        if (m._icon) m._icon.style.display = '';
+      } else {
+        m.setOpacity(0);
+        if (m._icon) m._icon.style.display = 'none';
+      }
+    });
+  });
+};
+
+// === МЕСТА ===
+
+// ━━━━━━━━ CANONICAL MUST-SEE ━━━━━━━━
+add('bridge', 16.0612, 108.2297, 'Dragon Bridge', 'Cầu Rồng', 'Символ Дананга', 'Стальной мост-дракон 666 м через реку Хан. Шоу огня и воды — пт/сб/вс в 21:00 (~15 мин). Лучший вид — с восточного берега или Love Bridge. Бесплатно.', '24/7 • шоу пт-вс 21:00', null, 'Đường Nguyễn Văn Linh, Hải Châu', 'Dragon Bridge Da Nang', 'out', '45-60 мин', 'danang.official');
+add('photo', 15.9989, 107.9953, 'Golden Bridge', 'Cầu Vàng', 'Ba Na Hills 1400м', 'Пешеходный мост 150 м на высоте 1414 м, поддерживаемый гигантскими каменными руками. Главная фототочка Вьетнама. Входит в билет Sun World Ba Na Hills (~900k VND).', '08:00-22:00', null, 'Sun World Bà Nà Hills, Hòa Ninh, Hòa Vang', 'Golden Bridge Ba Na Hills', 'out', '3-4 ч (весь парк)', 'goldenbridge_vietnam');
+add('trek', 15.9755, 108.2609, 'Marble Mountains', 'Ngũ Hành Sơn', '5 мраморных гор', 'Пять мраморных гор с пещерными буддийскими храмами и алтарями. Главная — Thuy Son (156 ступеней или лифт). Пещеры Huyen Khong и Am Phu. Вид на море.', '07:00-17:30', null, '81 Huyền Trân Công Chúa, Hoà Hải, Ngũ Hành Sơn', 'Marble Mountains Da Nang', 'both', '2-3 ч', null);
+add('temple', 16.1003, 108.2777, 'Lady Buddha / Linh Ung Son Tra', 'Chùa Linh Ứng Bãi Bụt', 'Самая большая пагода', 'Самый знаменитый храм города: статуя Богини Милосердия 67 м (самая высокая во Вьетнаме), на полуострове Son Tra. Внутри статуи — 17 уровней с буддистскими алтарями. Вид на весь город. Бесплатно.', '06:00-21:00', null, 'Bãi Bụt, Thọ Quang, Sơn Trà', 'Linh Ung Pagoda Son Tra Lady Buddha', 'out', '1-1.5 ч', null);
+add('museum', 16.0599, 108.2226, 'Museum of Cham Sculpture', 'Bảo tàng Điêu khắc Chăm', 'Цивилизация Чам', 'Единственный в мире музей Чамской цивилизации. 300+ скульптур V-XV вв. из песчаника, терракоты и бронзы. 12 географических галерей. Основан французами в 1919. Must-see.', '07:30-11:00, 13:00-17:00 (пн вых.)', null, '02 Đường 2 Tháng 9, Bình Hiên, Hải Châu', 'Museum Cham Sculpture Danang', 'in', '1.5-2 ч', null);
+add('view', 16.1874, 108.1307, 'Hai Van Quan Fort', 'Hải Vân Quan', 'Врата под небесами', 'Форт XIX в. императора Минь Манга на перевале 496 м. «Величайшие врата под небесами». Реставрирован, открыт с авг.2024. С 2026 — платно 70k VND. Вид: Дананг-бэй юг, Ланг Ко север.', '07:00-17:00', '70k VND (с 2026)', 'Hải Vân Pass, Hoà Vang / Phú Lộc border', 'Hai Van Quan fort', 'out', '1-1.5 ч', null);
+add('temple', 16.0667, 108.2230, 'Da Nang Cathedral (Pink Church)', 'Nhà thờ Con Gà', 'Розовая церковь', 'Единственный колониальный католический собор Дананга (1924). Готика, розовый фасад, медный петух-флюгер (отсюда «Куриная церковь»). Снаружи фотогеничнее. Мессы по расписанию.', '06:00-11:30, 14:00-17:00', null, '156 Trần Phú, Hải Châu', 'Da Nang Cathedral Pink Church', 'both', '30-45 мин', null);
+add('park', 16.0589, 108.2232, 'APEC Sculpture Park + Dragon Carp', 'Công viên APEC', 'Набережный парк', 'Парк-галерея скульптур стран АТЭС на набережной Хан. Рядом — статуя карпа-дракона 7.5м / 200т. Вечерняя подсветка. Бесплатно.', '24/7', null, 'Đường Bạch Đằng & 2 Tháng 9, Hải Châu', 'APEC Park Da Nang', 'out', '30-45 мин', null);
+
+// ━━━━━━━━ МОСТЫ ━━━━━━━━
+add('bridge', 16.07228, 108.22672, 'Han River Swing Bridge', 'Cầu Sông Hàn', 'Разводной мост', 'Первый в Вьетнаме разводной мост (2000). Разводится: сб-вс в 23:00, будни в 01:00 — пропускает суда. Красивая ночная подсветка. Бесплатно.', '24/7 • развод сб-вс 23:00', null, 'Đường Trần Phú, Thạch Thang, Hải Châu', 'Han River Swing Bridge', 'out', '20-30 мин', null);
+add('bridge', 16.09509, 108.22031, 'Thuan Phuoc Bridge', 'Cầu Thuận Phước', 'Самый длинный вантовый', 'Самый длинный вантовый мост Вьетнама (1850 м). Замыкает реку на выходе к морю. Пешеходные дорожки, вид на бухту. Ночная подсветка.', '24/7', null, 'Phường Thuận Phước, Hải Châu', 'Thuan Phuoc Bridge Da Nang', 'out', '20-30 мин', null);
+add('bridge', 16.05028, 108.22972, 'Tran Thi Ly Bridge', 'Cầu Trần Thị Lý', 'Парусный мост', 'Парусный мост 2013 г. — три белых паруса 145 м над рекой. Лучший ракурс — с набережной Bach Dang или с лодки. Ночная подсветка.', '24/7', null, 'Đường Trần Thị Lý, Hải Châu', 'Tran Thi Ly Bridge', 'out', '15-20 мин', null);
+add('bridge', 16.05105, 108.22839, 'Nguyen Van Troi Walking Bridge', 'Cầu Nguyễn Văn Trỗi', 'Исторический жёлтый', 'Американский мост 1965 г. (514 м, жёлтый), с 2015 — пешеходный. Редкая ферменная конструкция Pony. Ночная иллюминация с 2024.', '24/7', null, 'Đường 2 Tháng 9, Hải Châu', 'Nguyen Van Troi Bridge Da Nang', 'out', '20-30 мин', null);
+add('bridge', 16.07350, 108.22800, 'Love Bridge + Dragon Carp Statue', 'Cầu Tình Yêu', 'Замки влюблённых', 'Пешеходный мост 68 м с красными фонарями-сердцами и замочками. Рядом — мраморная статуя карпа-дракона 7.5 м. Лучшая точка съёмки шоу Dragon Bridge — прямо на голову.', '24/7', null, 'Trần Hưng Đạo, An Hải Trung, Sơn Trà', 'Love Bridge Da Nang', 'out', '30-45 мин', null);
+
+// ━━━━━━━━ ПЛЯЖИ ━━━━━━━━
+add('beach', 16.0603, 108.2468, 'My Khe Beach', 'Bãi biển Mỹ Khê', 'Главный пляж', 'Главный туристический пляж — 9-32 км белого песка. Forbes: «один из красивейших пляжей планеты». Сёрфинг, шезлонги, бары. Для ребёнка — северный участок у Pham Van Dong спокойнее.', '24/7, лайфгарды 6:00-18:00', null, 'Võ Nguyên Giáp, Mỹ An, Ngũ Hành Sơn', 'My Khe Beach Da Nang', 'out', '2-4 ч', null);
+add('beach', 16.0733, 108.2468, 'Pham Van Dong Beach', 'Bãi biển Phạm Văn Đồng', 'Городской пляж', 'Инфраструктура: душевые, раздевалки, спасатели. Спокойная вода, пологий вход — для ребёнка 8 мес. идеально. Парк с фонтанами рядом.', '24/7', null, 'Đường Phạm Văn Đồng, Phước Mỹ, Sơn Trà', 'Pham Van Dong Beach', 'out', '1-3 ч', null);
+add('beach', 16.0386, 108.2533, 'Bac My An Beach', 'Bãi biển Bắc Mỹ An', 'Тихий пляж у резортов', '4 км белого песка между My Khe и курортами Ngu Hanh Son. Чистая вода, спокойный прибой. Много отелей с пляжным сервисом.', '24/7', null, 'Bắc Mỹ An, Ngũ Hành Sơn', 'Bac My An Beach', 'out', '2-3 ч', null);
+add('beach', 16.0026, 108.2694, 'Non Nuoc Beach', 'Bãi biển Non Nước', 'У Мраморных гор', 'Тихий пляж у Marble Mountains, менее туристический. Крупный белый песок, синяя вода. Рядом деревня резчиков по мрамору. Хорошо с ребёнком — мало волн.', '24/7', null, 'Hòa Hải, Ngũ Hành Sơn', 'Non Nuoc Beach Da Nang', 'out', '1-3 ч', null);
+add('beach', 16.0890, 108.2496, 'Man Thai Fishing Beach', 'Bãi biển Mân Thái', 'Рыбацкий пляж', 'Рыбацкий пляж у подножья Monkey Mountain. Круглые плетёные лодки thuyền thúng, рыбаки с сетями. Локальная атмосфера, туристов почти нет.', '24/7', null, 'Mân Thái, Sơn Trà', 'Man Thai Beach', 'out', '1-2 ч', null);
+add('beach', 16.1236, 108.2201, 'Tien Sa Beach', 'Bãi biển Tiên Sa', 'Укромный пляж', 'Тихий пляж у грузового порта. Защищён горой — спокойная вода без волн. Вход через эко-зону, платно. Лесные горы с трёх сторон.', '06:00-18:00', null, 'Cuối đường Yết Kiêu, Thọ Quang, Sơn Trà', 'Tien Sa Beach Da Nang', 'out', '1-3 ч', null);
+add('beach', 16.1046, 108.2991, 'Bai Nam Beach', 'Bãi Nam', 'Скрытый пляж Son Tra', 'Нетронутый пляж ~600 м между статуей Lady Buddha и InterContinental. Кокосовые пальмы, спокойная вода, горы за спиной. Доступ на байке.', '24/7', null, 'Bãi Nam, bán đảo Sơn Trà', 'Bai Nam Beach Son Tra', 'out', '2-4 ч', null);
+add('beach', 16.1056, 108.3004, 'Bai But Beach', 'Bãi Bụt', 'Дикий рай', '«Дикий рай» Дананга — 300 м дикого пляжа, вода настолько прозрачная что видны кораллы с берега. Частично закрыт стройкой — заходить с открытой стороны.', '06:00-18:00', null, 'Bán đảo Sơn Trà', 'Bai But Beach Son Tra', 'out', '2 ч', null);
+add('beach', 16.1205, 108.1285, 'Nam O Beach + Reef', 'Bãi Rạn Nam Ô', 'Коралловый риф', 'Дикий рифовый пляж в 17 км от центра. Рыбацкая деревня с традиционным производством рыбного соуса nuoc mam. Скалы + песок, риф с зелёным мхом.', '24/7', null, 'Hòa Hiệp Bắc, Liên Chiểu', 'Nam O Beach reef', 'out', '2-4 ч', null);
+add('beach', 16.0959, 108.1463, 'Xuan Thieu / Red Beach', 'Bãi biển Xuân Thiều', 'Красный пляж', 'Локальный пляж 3 км в сосновых лесах. Редко туристы. «Красный пляж» — закат окрашивает воду в красный. Морепродукт в кафе. 13 км от центра.', '24/7', null, 'Hòa Hiệp Nam, Liên Chiểu', 'Xuan Thieu Red Beach', 'out', '1-2 ч', null);
+add('beach', 16.0755, 108.2496, 'Phuoc My Beach', 'Bãi biển Phước Mỹ', 'Тихая альтернатива', '600 м между My Khe и подножием Son Tra. Кокосовые пальмы, недорогие морепродукты, в будни почти пусто. Местные называют «настоящим My Khe».', '24/7', null, 'Võ Nguyên Giáp, An Hải, Sơn Trà', 'Phuoc My Beach Da Nang', 'out', '2 ч', null);
+add('photo', 16.1363, 108.2346, 'Black Stone Beach', 'Bãi Đá Đen', 'Чёрные скалы', 'Скрытый пляж из чёрной вулканической базальтовой гальки на СЗ Son Tra. Трек 4.5 км через лес. Осторожно: часть маршрутов через военные зоны — не следовать вслепую GPS.', '24/7', '⚠️ Маршрут через военные зоны — уточнять', 'Thọ Quang, Sơn Trà', 'Bai Da Den Black Stone Beach', 'out', '3-5 ч', null);
+
+// ━━━━━━━━ ХРАМЫ / ПАГОДЫ ━━━━━━━━
+add('temple', 15.9756, 108.2609, 'Linh Ung Marble Mountains', 'Chùa Linh Ứng Non Nước', 'Старейшая Линь Ынг', 'Старейший из трёх Линь Ынгов — 300+ лет. На горе Thuy Son внутри Marble Mountains. Стела Xaloi 30 м с 200 изображениями Будды. Вход в составе билета на Marble Mountains.', '07:00-17:30', null, 'Thủy Sơn, Ngũ Hành Sơn', 'Linh Ung Pagoda Marble Mountains', 'out', '30-45 мин', null);
+add('temple', 15.9768, 108.2620, 'Tam Thai Pagoda', 'Chùa Tam Thai', 'Императорский храм', 'Один из старейших храмов — с XVII века, перестроен императором Минь Мангом в 1825. 156 ступеней через ворота дракона. Национальный памятник. В составе Marble Mountains.', '07:00-17:30', null, 'Thủy Sơn, Ngũ Hành Sơn', 'Tam Thai Pagoda Marble Mountains', 'out', '20-30 мин', null);
+add('trek', 15.9752, 108.2615, 'Huyen Khong Cave', 'Động Huyền Không', 'Главная пещера', 'Самая большая пещера Marble Mountains с буддийским алтарём. Через провал в потолке — «прожектор» солнца на статую Thien Y A Na. Одно из культовых фото Дананга.', '07:00-17:30', null, 'Thủy Sơn, Ngũ Hành Sơn', 'Huyen Khong Cave', 'in', '20-30 мин', null);
+add('trek', 15.9756, 108.2620, 'Am Phu Cave (Hell Cave)', 'Động Âm Phủ', '18 кругов ада', 'Пещера «18 кругов ада» в Thuy Son — скульптуры демонов и грешников в темных гротах. Жутко, фотогенично.', '07:00-17:30', null, 'Thủy Sơn, Ngũ Hành Sơn', 'Am Phu Cave Hell', 'in', '45 мин', null);
+add('temple', 15.9695, 108.2528, 'Quan The Am Pagoda', 'Chùa Quán Thế Âm', 'Пагода Гуань Инь', 'Основана в 1957 у горы Kim Son (одна из 5 мраморных). Спокойное место вдали от туристов. Ежегодный фестиваль Quan The Am. Бесплатно.', '06:00-18:00', null, '48 Sư Vạn Hạnh, Hoà Hải, Ngũ Hành Sơn', 'Quan The Am Pagoda', 'out', '30-45 мин', null);
+add('temple', 16.0672, 108.2112, 'Phap Lam Pagoda', 'Chùa Pháp Lâm', 'Главный городской', 'Главный буддийский центр Дананга (1934). Двухэтажный на 1000 мест, резные колонны, золотая статуя Будды. Штаб буддийской ассоциации провинции. Бесплатно.', '05:00-11:30, 13:00-21:30', null, '574 Ông Ích Khiêm, Nam Dương, Hải Châu', 'Phap Lam Pagoda Da Nang', 'out', '30-45 мин', null);
+add('temple', 16.0629, 108.2197, 'Pho Da Pagoda', 'Chùa Phổ Đà', '100+ лет', 'Основана 1915, один из старейших храмов города. Статуя Амитабха 2.4 м. Исторически значимый центр буддизма Центрального Вьетнама.', '06:00-19:00', null, '340 Phan Châu Trinh, Bình Thuận, Hải Châu', 'Pho Da Pagoda', 'out', '20-30 мин', null);
+add('temple', 15.9714, 108.1698, 'Nam Son Pagoda', 'Chùa Nam Sơn', 'Хюэ в миниатюре', '«Хюэ в миниатюре» — рекреация дворцовой архитектуры Хюэ среди поля лотосов, 10 км от центра. Никаких туристов, только местные паломники.', '06:00-18:00', null, 'Thôn Cẩm Na, Hòa Châu, Hòa Vang', 'Nam Son Pagoda Da Nang', 'out', '1-1.5 ч', null);
+add('temple', 15.9990, 107.9950, 'Linh Ung Ba Na', 'Chùa Linh Ứng Bà Nà', 'Высокогорная пагода', 'Самая высокогорная из трёх Линь Ынгов — на 1487 м на вершине Ba Na. Территория курорта Sun World Ba Na Hills. Архитектура сливается с облаками.', '08:00-17:00', null, 'Sun World Ba Na Hills', 'Linh Ung Pagoda Ba Na', 'out', '30-45 мин', null);
+add('temple', 16.0722, 108.2167, 'Cao Dai Temple', 'Thánh thất Cao Đài', 'Храм каодай', 'Второй по величине храм Cao Dai во Вьетнаме. Нео-готика + барокко + восток: колонны с драконами, «Всевидящее око». Молебны 4 раза в день; самый зрелищный в полдень (цветные ризы).', '05:30-21:00', null, '63D Hải Phòng, Thạch Thang, Hải Châu', 'Cao Dai Temple Da Nang', 'both', '45-60 мин', null);
+
+// ━━━━━━━━ ГОРЫ / ПРИРОДА / ВИДЫ ━━━━━━━━
+add('photo', 15.9956, 107.9942, 'Ba Na Hills French Village', 'Làng Pháp Bà Nà', 'Европа на 1500м', 'Реплика европейского городка на 1487 м: брусчатка, готическая церковь Сен-Дени, замки, площади. Канатная дорога 5801 м — рекорд длины. Билет ~750k VND.', '07:30-22:00', null, 'Sun World Ba Na Hills', 'Ba Na Hills French Village', 'out', '4-6 ч', 'sunworldbanahills');
+add('view', 16.11862, 108.27304, 'Ban Co Peak', 'Đỉnh Bàn Cờ', 'Шахматная вершина', 'Высшая точка Son Tra (581 м) — бронзовый мудрец за шахматной доской. Панорама 360°: весь Дананг, залив, Хай Ван. Дикие обезьяны-доуки. Только на мотобайке.', '24/7', null, 'Đỉnh Bàn Cờ, Thọ Quang, Sơn Trà', 'Ban Co Peak Son Tra', 'out', '2-3 ч', null);
+add('trek', 16.1141, 108.3100, 'Son Tra 1000-Year Banyan', 'Cây Đa Sơn Trà', '1000-летнее дерево', 'Баньяновое дерево ~800-1000 лет: обхват ствола 10 м, 26 воздушных корней. Охраняемое наследие. Трек ~1-2 км от дороги.', '24/7', null, 'Sub-zone 63, Son Tra Nature Reserve', 'Son Tra Banyan Tree', 'out', '2 ч', null);
+add('view', 16.2018, 108.1262, 'Hai Van Pass Summit', 'Đèo Hải Vân', 'Облачный перевал', 'Сам перевал — 21 км горного шоссе, «облачный перевал». Несколько стихийных смотровых с кофе-точками. Top Gear: «лучшая дорога мира». Рассвет особенно.', '24/7', null, 'National Route 1, Da Nang/Phu Loc border', 'Hai Van Pass summit view', 'out', '1-2 ч', null);
+add('view', 16.1375, 108.3267, 'Tien Sa Lighthouse', 'Hải Đăng Tiên Sa', 'Маяк 1902 года', 'Маяк 1902 г. (фр. колония) на вершине Son Tra, 238 м. Вид на весь залив. «Новая звезда чекина», туристов ещё мало. 20 000 VND.', '05:00-21:00 (башня до 18:00)', null, 'Bán đảo Sơn Trà', 'Tien Sa Lighthouse', 'out', '1.5 ч', null);
+add('view', 16.0972, 108.2542, 'Mui Nghe Sunrise Point', 'Mũi Nghê', 'Первый рассвет', 'Самый восточный мыс Дананга — первое место где встаёт солнце. Дикий мыс: скалы, море, никаких зданий. Старт трека 04:00, подъём 30-40 мин. Только мотобайк.', '24/7', null, 'Son Tra Peninsula, Eastern tip', 'Mui Nghe Cape Son Tra', 'out', '1.5-2 ч', null);
+add('shop', 15.9744, 108.2657, 'Non Nuoc Stone Carving Village', 'Làng đá mỹ nghệ Non Nước', 'Деревня резчиков', 'Национальное нематериальное наследие (2014). 300+ семейных мастерских вдоль 800 м. Скульптуры из мрамора ручной работы от Будд до декора. Торг уместен.', '07:00-18:00', null, 'Huyền Trân Công Chúa, Hoà Hải, Ngũ Hành Sơn', 'Non Nuoc Stone Village', 'out', '1-1.5 ч', null);
+add('hidden', 16.0799, 108.0554, 'Hoa Trung Lake', 'Hồ Hòa Trung', 'Горное озеро', 'Крупнейшее искусственное озеро Дананга (6.5 км²) среди холмов. Местные приезжают на рыбалку и кемпинг. Сентябрь-октябрь — сухая степь в воде. Иностранцев почти нет.', '07:00-17:00', null, 'Hòa Ninh & Hòa Liên, Hoà Vang', 'Hoa Trung Lake Da Nang', 'out', '2-4 ч', null);
+
+// ━━━━━━━━ РЫНКИ / ШОППИНГ ━━━━━━━━
+add('market', 16.0675, 108.2237, 'Han Market', 'Chợ Hàn', 'Главный туристический', 'Старейший рынок у западного берега Хан (576 лавок, 2 этажа): шёлк, лак, морепродукты, вьетнамские сувениры. Aozai на заказ за 1 час.', '05:00-19:00', null, '119 Trần Phú, Hải Châu', 'Han Market Da Nang', 'in', '1-1.5 ч', null);
+add('market', 16.0680, 108.2122, 'Con Market', 'Chợ Cồn', 'Местный рынок', 'Огромный 3-этажный рынок с 2000+ прилавками — ткани, одежда, специи, морепродукты. Местный, не туристический. Цены дёшево, торг обязателен.', '06:00-20:00', null, '290 Hùng Vương, Vinh Trung, Hải Châu', 'Con Market Da Nang', 'in', '1.5-2 ч', null);
+add('event', 16.0474, 108.2199, 'Helio Night Market', 'Chợ đêm Helio', 'Крупнейший ночной', 'Крупнейший ночной рынок — 4 зоны: уличная еда, морепродукты, пивной двор, сувениры. 300+ прилавков. Колесо обозрения не работает (Asia Park закрыт).', '17:00-22:30', null, '01-02 Đường 2/9, Hoà Cương Bắc, Hải Châu', 'Helio Night Market Da Nang', 'out', '2-3 ч', null);
+add('event', 16.0632, 108.2299, 'Son Tra Night Market', 'Chợ đêm Sơn Trà', 'У Моста Дракона', 'Ночной рынок у подножия Моста Дракона (восточный берег). Реорганизован с авг.2025. Уличная еда, морепродукты, сувениры. Пт-Вс — шоу Дракона в 21:00.', '18:00-23:00', null, 'Mai Hắc Đế, An Hải Trung, Sơn Trà', 'Son Tra Night Market', 'out', '1.5-2 ч', null);
+add('event', 16.0415, 108.2453, 'An Thuong Night Area', 'Phố đêm An Thượng', 'Экспат-улица', 'Не рынок, а улица ресторанов и баров у My Khe. Экспаты + туристы. Морепродукты, вьетнамская кухня, коктейли. Вайб расслабленный.', '18:00-00:00', null, 'An Thượng 29, Bắc Mỹ Phú, Ngũ Hành Sơn', 'An Thuong Night Market', 'out', '2-3 ч', null);
+add('market', 16.1047, 108.2389, 'Tho Quang Fish Port', 'Cảng cá Thọ Quang', 'Рыбный порт', 'Крупнейший рыбный порт Центрального Вьетнама — сотни лодок разгружают улов на рассвете. Живые крабы, кальмары, рыба. Атмосфера аутентичная.', '04:00-08:00', null, 'Đường Vân Đồn, Thọ Quang, Sơn Trà', 'Tho Quang Fishing Port', 'out', '1 ч', null);
+add('shop', 16.0549, 108.2151, 'Lotte Mart Da Nang', 'Lotte Mart Đà Nẵng', 'Корейский ТЦ', '5 этажей, 24 000 кв.м — супермаркет, одежда, электроника, боулинг, каток, рестораны. Лучший выбор импортных продуктов. Пеленальные.', '08:00-22:00', null, '6 Nại Nam, Hoà Cương Bắc, Hải Châu', 'Lotte Mart Da Nang', 'in', '2-3 ч', null);
+add('shop', 16.0748, 108.2350, 'Vincom Plaza Da Nang', 'Vincom Plaza Ngô Quyền', 'Международные бренды', 'Современный ТЦ — Zara, H&amp;M, Nike, Adidas, рестораны, кинотеатр. TiNiWorld на 3 этаже. Лучшая концентрация международных марок.', '10:00-22:00', null, '910A Ngô Quyền, An Hải, Sơn Trà', 'Vincom Plaza Da Nang', 'in', '2-3 ч', null);
+add('shop', 16.0547, 108.1873, 'GO! Da Nang (ex Big C)', 'GO! Đà Nẵng', 'Гипермаркет', 'Большой гипермаркет. Продукты, бытовая химия, одежда, техника. Самый удобный для закупки продуктов по местным ценам. Дёшево.', '08:00-22:00', null, '255 Hùng Vương, Thanh Khê', 'GO Da Nang supermarket', 'in', '1-1.5 ч', null);
+add('shop', 16.0426, 108.2478, 'K-Mart Korean Supermarket', 'Siêu thị Kmart', 'Корейский 24/7', 'Корейский супермаркет на An Thuong — рамён, снеки, косметика, напитки. Работает 24/7. 3 точки в городе. Для скучающих по азиатскому ассортименту.', '24/7', null, '05-07 An Thượng 2, Mỹ An, Ngũ Hành Sơn', 'Kmart Korean supermarket Da Nang', 'in', '30-45 мин', null);
+
+// ━━━━━━━━ МУЗЕИ / КУЛЬТУРА ━━━━━━━━
+add('museum', 16.0682, 108.2238, 'Da Nang Museum (Dien Hai Citadel)', 'Bảo tàng Đà Nẵng', 'В старой крепости', 'В исторической крепости Dien Hai XIX в. (сыграла ключевую роль против французов 1858). 2500+ артефактов: доисторика, войны, этнические меньшинства. 3 этажа + кинозал.', '08:00-17:00', null, '24 Trần Phú, Thạch Thang, Hải Châu', 'Da Nang Museum Dien Hai', 'both', '1-1.5 ч', null);
+add('museum', 16.0715, 108.2185, 'Da Nang Fine Arts Museum', 'Bảo tàng Mỹ thuật Đà Nẵng', '3-й по величине', 'Третий по величине музей искусства Вьетнама. 800+ работ: современное искусство, живопись маслом и лаком, скульптура, народные ремёсла Центральных нагорий.', '08:00-17:00', null, '78 Lê Duẩn, Thạch Thang, Hải Châu', 'Da Nang Fine Arts Museum', 'in', '1-1.5 ч', null);
+add('museum', 16.0487, 108.2177, 'Ho Chi Minh + Zone 5 Military Museum', 'Bảo tàng Quân khu 5', 'Военный комплекс', 'Комплекс: военный музей Зоны 5, трофейная техника под открытым небом (танки, вертолёты), копия домика Хо Ши Мина, музей Хо Ши Мина. Малолюдно, насыщенно.', '07:30-10:30, 13:30-16:30 (пн вых.)', null, '3 Duy Tân, Hoà Thuận Đông, Hải Châu', 'Zone 5 Military Museum Da Nang', 'both', '1.5-2 ч', null);
+add('museum', 16.1014, 108.2760, 'Dong Dinh Museum', 'Bảo tàng Đông Đình', 'Частный музей-сад', 'Частный музей в реликтовом лесу Son Tra. 4 секции: антиквариат, искусство, фото Чам 1908-1910, этнографический дом. Тихо, необычно.', '08:00-17:00 (пн вых.)', null, 'Suối Bút, Đường Hoàng Sa, Thọ Quang, Sơn Trà', 'Dong Dinh Museum Son Tra', 'both', '1.5-2 ч', null);
+add('museum', 16.0649, 108.2196, 'Trung Vuong Theatre', 'Nhà hát Trưng Vương', 'Главная сцена', 'Главная театральная сцена Дананга с колониальным фасадом. Регулярные постановки: традиционный театр Tuong, кай-лыонг, балет, опера.', 'По расписанию', null, '86 Hùng Vương, Hải Châu', 'Trung Vuong Theatre', 'in', '1.5-2 ч', null);
+
+// ━━━━━━━━ GF DEDICATED (1) ━━━━━━━━
+add('gf_ded', 16.0552, 108.2405, 'CRAFT Cafe', 'CRAFT Café', '100% безглютен', '🥬 ЕДИНСТВЕННЫЙ подтверждённый dedicated GF в Дананге. Всё меню без глютена: GF-вафли, панкейки, смузи. Atly + TripAdvisor подтверждают celiac-friendly. Отдельная кухня.', '07:00-19:00', null, '126/20 Nguyễn Duy Hiệu, An Hải Đông, Sơn Trà', 'CRAFT Cafe Da Nang gluten free', 'both', '1-2 ч', 'craftcafe_danang');
+
+// ━━━━━━━━ GF OPTIONS ━━━━━━━━
+add('gf_opt', 16.0580, 108.2452, 'Bep Cuon (Michelin)', 'Bếp Cuốn', 'Вьетнамская GF-friendly', 'Michelin Plate 2025. Персонал знает целиакию. Спринг-роллы, рисовая лапша — натурально GF. Обязательно показать карточку целиака. Кухня открытая — риск умеренный.', '10:30-21:00 (пн вых.)', '⚠️ Объяснить официанту', '31-33 Trần Bạch Đằng, Phước Mỹ, Sơn Trà', 'Bep Cuon Michelin Da Nang', 'both', '1-1.5 ч', 'bepcuon');
+add('gf_opt', 16.0499, 108.2360, 'Fill My Buns', 'Fill My Buns', 'Рисовые булочки', 'Бургеры с рисовыми булочками. Персонал знает целиакию, проактивно предупреждает о рисках. Картошка фри безопасна. Отзыв целиака 2025: «взяли все меры».', '14:30-22:00', '⚠️ Есть пшеничные продукты рядом', '14 Mỹ An 1, Bắc Mỹ Phú, Ngũ Hành Sơn', 'Fill My Buns Da Nang', 'in', '30-60 мин', 'fillmybuns');
+add('gf_opt', 16.0488, 108.2465, 'iVegan Supershop', 'iVegan', 'Веганский GF-magaz', 'Веганский магазин-кафе. Salad buddha bowls, сырые торты, смузи-боулы — многие GF, но не всё маркировано. Риск контаминации низкий.', '08:00-21:00', '⚠️ Уточнять GF-блюда', 'Lô 31 An Thượng 4, Mỹ An, Ngũ Hành Sơn', 'iVegan Supershop Da Nang', 'in', '30-60 мин', null);
+add('gf_opt', 16.0178, 108.2571, 'Roots Plant-Based', 'Roots', 'Веганское кафе', 'Веганское кафе с GF-маркировкой. Buddha bowls, смузи-боулы с GF-гранолой, сырые торты. Риск контаминации низкий — кухня преимущественно GF. Хорошо для завтрака.', '08:00-22:00', '⚠️ Объяснить официанту', '27 Trần Bạch Đằng, Bắc Mỹ Phú, Ngũ Hành Sơn', 'Roots Plant Based Cafe Da Nang', 'both', '45-60 мин', 'roots.vietnam');
+add('gf_opt', 16.0197, 108.2539, 'Patakka Indian', 'Patakka Indian', 'Индийский GF', 'Индийский ресторан с богатым GF-меню. Dal, чечевичные карри, тандурные блюда (без пшеничных маринадов), рис. Хозяин помогает подобрать GF. Избегать наан и самосы.', '08:00-23:00', '⚠️ Есть мучные блюда на кухне', '39-41 Đỗ Bá, Mỹ An, Ngũ Hành Sơn', 'Patakka Indian Da Nang', 'both', '1-1.5 ч', 'patakkavietnam');
+add('gf_opt', 15.9793, 108.2726, 'Hyatt Green House', 'Hyatt Regency Green House', 'Ресторан 5* отеля', 'Ресторан 5* курорта с обученным персоналом. Завтрак: свежие фрукты, рис, яйца, вьетнамские рисовые блюда. GF-паста как замена. Отдельная подготовка по запросу. Риск низкий.', '06:30-22:00', null, '5 Trường Sa, Hoà Hải, Ngũ Hành Sơn', 'Hyatt Regency Da Nang Green House', 'in', '1-1.5 ч', null);
+
+// ━━━━━━━━ СПЕЦИАЛИТЕТЫ ДАНАНГА ━━━━━━━━
+add('hidden', 16.0724, 108.2191, 'Mi Quang 1A (Michelin)', 'Mì Quảng 1A', 'Главный mi quang', 'Самый известный mì quảng города. Michelin 2025. Рисовая лапша с куркумой, свининой, креветками, арахисом. ~40k VND. GF: бульон без глютена, но попросить без соевого соуса.', '06:00-21:00', '⚠️ Соевый соус к столу — отказаться', '5 Hải Phòng, Thạch Thang, Hải Châu', 'Mi Quang 1A Michelin', 'in', '30 мин', null);
+add('hidden', 16.0693, 108.2059, 'Mi Quang Ba Mua', 'Mỳ Quảng Bà Mua', 'Второй культовый', 'Второй культовый mì quảng, 10 филиалов. Фирменный — вариант с медузой (sứa). ~35k VND. Тот же риск с соевым соусом.', '06:30-22:00', '⚠️ Соевый соус — отказаться', '95A Nguyễn Tri Phương, Thạc Gián, Thanh Khê', 'Mi Quang Ba Mua', 'in', '30 мин', null);
+add('hidden', 16.0683, 108.2117, 'Bun Cha Ca 109 (Michelin)', 'Bún Chả Cá 109', 'Рыбный суп', 'Michelin Bib Gourmand 2025. 50+ лет, 3-е поколение. Рыбные котлеты в томатно-ананасовом бульоне. ~25-30k VND.', '06:00-22:00', '⚠️ ОПАСНО для целиака: пшеничный крахмал в котлетах', '109 Nguyễn Chí Thanh, Hải Châu', 'Bun Cha Ca 109', 'in', '30 мин', null);
+add('hidden', 16.0589, 108.2162, 'Banh Xeo Ba Duong (Michelin)', 'Bánh Xèo Bà Dưỡng', 'Рисовый блинчик', 'Michelin 2025, 40+ лет. Хрустящий bánh xèo на рисовой муке с креветками и свининой. Прячется в переулке. ~50-80k VND. Относительно безопасно для целиака — тесто рисовое.', '09:30-21:00', '⚠️ Уточнить маринад свинины', '280/23 Hoàng Diệu, Nam Dương, Hải Châu', 'Banh Xeo Ba Duong Michelin', 'out', '45 мин', 'Banhxeobaduong');
+add('hidden', 16.0631, 108.2190, 'Banh Beo Ba Be', 'Bánh Bèo Bà Bé', 'Паровые рис.блюдца', 'Культовое место 30+ лет. Паровые рисовые блюдца bánh bèo с рыбным фаршем, bánh nậm, bánh lọc. 6-15k VND/штука. БЕЗОПАСНО для целиака — чистая рисовая мука.', '06:00-18:30', null, '100 Hoàng Văn Thụ, Phước Ninh, Hải Châu', 'Banh Beo Ba Be Da Nang', 'in', '45 мин', null);
+add('hidden', 16.0610, 108.2201, 'Banh Trang Mau', 'Bánh Tráng Cuốn Thịt Heo Mậu', 'Рис.бумага со свиной', 'Знаменитый bánh tráng cuốn thịt heo: рисовая бумага + варёная свинина + зелень. ~60-100k VND. Сам ролл безглютенный, но соус mắm nêm уточнить.', '10:00-22:00', '⚠️ Уточнить состав mắm nêm', '215 Trưng Nữ Vương, Hòa Thuận Đông, Hải Châu', 'Banh Trang Mau Da Nang', 'in', '45 мин', null);
+add('hidden', 16.0816, 108.2492, 'Be Man Seafood (Michelin)', 'Hải Sản Bé Mặn', 'Морепродукты', 'Michelin 2024-25. My Khe Beach. Выбираешь живого краба/лобстера из аквариума. ~300-800k VND. Для целиака: просить без соевого соуса в маринадах.', '10:00-22:00', '⚠️ Соевый соус в маринадах', 'Lô 8 Võ Nguyên Giáp, Mân Thái, Sơn Trà', 'Be Man Seafood Da Nang', 'out', '1.5 ч', null);
+add('hidden', 16.1134, 108.1547, 'Goi Ca Nam O Cam Tu', 'Gỏi Cá Nam Ô Cẩm Tú', 'Сырая рыба', 'Сырая рыба по-намоски: тонко нарезанная, маринованная в рисовом уксусе, с зеленью. Уникальный рецепт деревни Nam O. ~80-120k VND.', '07:00-20:00', '⚠️ Уточнить соусы и крекеры', '950 Nguyễn Lương Bằng, Liên Chiểu', 'Goi Ca Nam O', 'in', '1 ч', null);
+
+// ━━━━━━━━ КОФЕЙНИ / ROOFTOP ━━━━━━━━
+add('view', 16.07280, 108.22360, 'Sky36 Rooftop Bar', 'Sky36 Novotel', 'Самый высокий бар', 'Самый высокий бар Вьетнама — 35-37 этажи Novotel (~150 м). Панорама 360° на Han River, Dragon Bridge, город. Luxury-клуб, коктейли от 200k, дресс-код.', '18:00-02:00', null, '36-38 Bạch Đằng, Thạch Thang, Hải Châu', 'Sky36 Novotel Da Nang', 'both', '2-3 ч', 'sky36danang');
+add('view', 16.0667, 108.2247, 'Brilliant Top Bar', 'Brilliant Top Bar', 'Вид на Dragon Bridge', '17 этаж Brilliant Hotel. Открытая терраса с лучшим видом на Dragon Bridge — идеально для шоу пт-вс 21:00. Bistro, коктейли от 120k.', '16:00-23:00', null, '162 Bạch Đằng, Hải Châu', 'Brilliant Top Bar Da Nang', 'out', '2-3 ч', 'brillianttopbar');
+add('view', 16.0655, 108.2289, 'Endless Summer Rooftop', 'Endless Summer Wink Hotel', 'Miami-стиль', '25-й этаж Wink Hotel. Стиль Miami 80-х: неон, энергия. Вид на Han River, Dragon Bridge, Han Bridge. Коктейли от 150k.', '16:00-01:00', null, '351 Trần Hưng Đạo, Sơn Trà', 'Endless Summer Rooftop Wink', 'out', '1.5-2 ч', null);
+add('view', 16.0688, 108.2449, 'Top Bar A La Carte', 'The Top A La Carte', 'Инфинити-бассейн', '23-й этаж A La Carte Hotel у My Khe. Инфинити-бассейн с видом на Восточное море. Лучшие закаты города. Коктейли от 130k.', '16:00-23:00', null, '200 Võ Nguyên Giáp, Sơn Trà', 'Top Bar A La Carte Danang', 'out', '2 ч', 'alacartedanang');
+add('cafe', 16.0480, 108.2461, '43 Factory / XLIII Coffee', 'XLIII Cà Phê', 'Specialty обжарка', 'Флагман specialty-обжарки Дананга. Индустриальный лофт, видна обжарка. Лучший single-origin Вьетнама. ~65k. Розетки, Wi-Fi — для работы.', '07:30-22:00', null, 'Lô 422 Ngô Thì Sĩ, Bắc Mỹ An, Ngũ Hành Sơn', '43 Factory Coffee Roaster', 'both', '1.5-2 ч', 'xliiicoffee');
+add('cafe', 16.0722, 108.2237, 'Cong Ca Phe Bach Dang', 'Cộng Cà Phê', 'Вьетнамская сеть', 'Культовая сеть — военный ретро-стиль 70-х, камуфляжный декор. Вид на Han River. Обязательно: Cà Phê Cốt Dừa (кокосовый кофе). ~45k.', '07:00-23:30', null, '96-98 Bạch Đằng, Hải Châu', 'Cong Ca Phe Vietnam', 'both', '1 ч', 'congcaphe');
+add('cafe', 16.1086, 108.2378, 'Son Tra Marina', 'Sơn Trà Marina', 'Маленький Санторини', '«Маленький Санторини» — белые стены, синие арки, греческий стиль на Son Tra. Панорама на залив. Salt Coffee — обязательно. Инстаграм-рай.', '07:00-22:00', null, 'Đường Hồ Xanh, Thọ Quang, Sơn Trà', 'Son Tra Marina Cafe', 'out', '1.5 ч', 'sontramarina');
+add('cafe', 16.0695, 108.2152, 'NAM House Coffee', 'NAM House Cà Phê', 'Винтажный дом', 'Ностальгический винтажный дом в переулке. Антикварная мебель, фр. колониальный стиль. Скрытая жемчужина. Тихо, атмосферно. ~40k.', '07:30-21:30', null, '15 Lê Hồng Phong, Hải Châu', 'NAM House Coffee Da Nang', 'both', '1.5 ч', 'namhousecoffee');
+add('cafe', 16.0710, 108.2420, '7 Bridges Brewing', '7 Bridges Brewing Co', 'Крафтовая пивоварня', 'Первая крафтовая пивоварня Дананга (2017). На руфтопе — лучший вид на Dragon Bridge без толп. Социальное предприятие (часть прибыли на экологию).', '11:00-23:00', null, '493 Trần Hưng Đạo, An Hải Tây, Sơn Trà', '7 Bridges Brewing Da Nang', 'out', '2 ч', null);
+add('cafe', 16.0436, 108.2442, 'Six on Six Cafe', 'Six On Six', 'Кафе с кошками', 'Экспатский фаворит: уютный дворик с кошками в тихом переулке My An. Бранч, специальный кофе без сахара, детская зона. Работает с 2016. С коляской ок.', '07:30-21:30', null, '64 Bà Huyện Thanh Quan, Mỹ An, Ngũ Hành Sơn', 'Six on Six Cafe Da Nang', 'out', '1-2 ч', 'sixonsixcafe');
+
+// ━━━━━━━━ ПАРКИ / FAMILY ━━━━━━━━
+add('park', 16.0602, 108.2017, 'March 29 Park', 'Công Viên 29 Tháng 3', 'Главный парк', 'Большой городской парк с озером. Лучшая тень в Дананге. Детская площадка, широкие аллеи для слинга. Воздух чистый. Утром до жары идеально.', '24/7', null, 'Điện Biên Phủ, Thạc Gián, Thanh Khê', 'Cong Vien 29 Thang 3 Da Nang', 'out', '1-2 ч', null);
+add('park', 16.0703, 108.2458, 'East Sea Park (Bien Dong)', 'Công Viên Biển Đông', 'Парк у моря', 'Парк вдоль берега с кокосовыми пальмами и скамейками. Тень утром. Широкие дорожки — идеально для слинга. Свежий морской бриз. Бесплатно.', '24/7', null, 'Võ Nguyên Giáp & Phạm Văn Đồng, Phước Mỹ, Sơn Trà', 'East Sea Park Da Nang Bien Dong', 'out', '1 ч', null);
+add('event', 16.0963, 108.1575, 'Mikazuki Water Park 365', 'Công viên nước Mikazuki', 'Крытый аквапарк', 'Крупнейший крытый аквапарк Вьетнама (японский стиль). Горки + волновой бассейн + онсэн. Детская зона для малышей. Жара/дождь — не страшно.', '09:00-19:00', null, 'Xuan Thieu Resort, Nguyễn Tất Thành, Hoà Hiệp Nam, Liên Chiểu', 'Mikazuki Water Park Da Nang', 'in', '4-6 ч', 'mikazukiwaterpark365');
+add('event', 16.0406, 108.2501, 'Pullman Beach Resort Pool', 'Pullman Đà Nẵng', 'Day Pass + Kids Club', '5* курорт с Kids Club 0-10 лет (для гостей бесплатно). Day Pass: дети до 5 лет бесплатно. Детский бассейн, тень, кондиционер в детской зоне.', 'Kids Club 09:00-17:00 (няня до 22:00 доп.)', null, '101 Võ Nguyên Giáp, Bắc Mỹ An, Ngũ Hành Sơn', 'Pullman Danang Beach Resort', 'both', '3-4 ч', null);
+
+// ━━━━━━━━ РАЙОНЫ ━━━━━━━━
+add('district', 16.0612, 108.2476, 'An Thuong Expat Quarter', 'Phố Tây An Thượng', 'Экспат-квартал', 'Главный экспат-квартал: улицы An Thuong 1-4 — кафе, бары, корейские рестораны, тай-массаж. Пляж My Khe через дорогу. Вечерний вайб.', '10:00-01:00', null, 'Đường An Thượng 2-4, Mỹ An, Ngũ Hành Sơn', 'An Thuong Expat Quarter Da Nang', 'out', '2-3 ч', null);
+add('district', 16.0680, 108.2232, 'Bach Dang Walking Street', 'Phố đi bộ Bạch Đằng', 'Пешеходная набережная', 'Пешеходная набережная 1.2 км вдоль реки Хан от Dragon Bridge до моста Тран Тхи Ли. Уличные артисты, закуски, подсветка мостов. Пт-Вс 15:00-24:00.', '24/7 / Пт-Вс пешеходка', null, 'Đường Bạch Đằng, Hải Châu', 'Bach Dang Walking Street', 'out', '1-2 ч', null);
+add('district', 16.1085, 108.2340, 'Tho Quang Fishing Village', 'Làng chài Thọ Quang', 'Рыбацкий порт', 'Живой рыбацкий порт у подножия Son Tra. Ранним утром (4-7) рыбаки выгружают улов, круглые лодки-коракли. Аутентичный Вьетнам без туристической обёртки.', '04:00-08:00', null, 'Đường Phạm Bằng, Thọ Quang, Sơn Trà', 'Tho Quang Fishing Village', 'out', '1 ч', null);
+add('district', 16.1508, 108.1401, 'Nam O Fishing Village', 'Làng chài Nam Ô', 'Старейшая деревня', 'Традиционная рыбацкая деревня у устья Cu De, у подножия Hai Van Pass. Производство рыбного соуса nuoc mam. Старые дома, лодки в заливе. Без туристов.', '05:00-20:00', null, 'Thôn Nam Ô, Hòa Hiệp Nam, Liên Chiểu', 'Nam O Fishing Village', 'out', '1-2 ч', null);
+
+// ━━━━━━━━ HIDDEN GEMS / ФОТО ━━━━━━━━
+add('photo', 16.0607, 108.2200, 'Fresco Mural Village', 'Làng bích họa Đà Nẵng', 'Муралы Дананга', 'Первая фресковая деревня Дананга (2018) — 30+ муралов в рабочем квартале. Не туристическая: жители здесь живут, стирают бельё рядом с фресками.', '24/7', null, 'Kiệt 75 Nguyễn Văn Linh, Phước Ninh, Hải Châu', 'Fresco Mural Village Da Nang', 'out', '30-45 мин', null);
+add('hidden', 16.0328, 108.2098, 'Korea Kiwa Cafe', 'Korea Kiwa Cafe', 'K-cafe с ханбоком', 'Корейский концепт-кафе с арендой ханбока для фотосессий. 2 этажа + терраса. Первый «K-cafe» города. Вирально в TikTok вьетнамских блогеров.', '06:30-23:00', null, '220 Xô Viết Nghệ Tĩnh, Hoà Cường Nam, Hải Châu', 'Korea Kiwa Cafe Da Nang', 'both', '1 ч', null);
+add('hidden', 16.0918, 108.1462, 'No-Name Temple (Da Son)', 'Chùa Không Tên', 'Скит в скале', 'Буддийский скит без имени и без настоятеля — волонтёры ухаживают. Встроен в скальный карьер Да Шон: тысячелетние баньяны, искусственный водопад. Вирусный в 2024.', 'рассвет-закат', null, 'Đà Sơn, Hòa Khánh Nam, Liên Chiểu', 'Chua Khong Ten Da Son Da Nang', 'out', '1 ч', null);
+add('event', 16.0686, 108.2241, 'Han River Night Cruise', 'Du thuyền sông Hàn', 'Круиз с шоу', 'Вечерний круиз по Хан — танцы Чам, подсветка мостов. Пт-Вс посадка 20:00 — видно шоу Дракона с воды. ~150k VND/чел.', '18:00-22:00 отправления', null, '26 Bạch Đằng, Thạch Thang, Hải Châu (у Novotel)', 'Han River Night Cruise', 'out', '1 ч', null);
+</script>
+</body>
+</html>
